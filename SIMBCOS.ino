@@ -5,8 +5,16 @@ const long interval = 100;  // Interval for task scheduling
 bool ledState = false;       // Controls LED blinking state
 int currentTask = 1;         // 1 = Shell, 2 = Uptime
 
+int currentCluster = -1;
+
 bool shellMode;
 bool upMode;
+
+int freeMemory() {
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+}
 
 // Shell task variables
 bool shellPromptActive = true;
@@ -49,8 +57,6 @@ const long ledInterval = 1000;
       if (EEPROM.read(FAT_TABLE_START + startCluster) != 0x00) {
           return false; // Cluster is occupied
       }
-
-      EEPROM.write(startCluster, 0xFF);
 
     //   Write data to EEPROM
       for (int i = 0; i < dataSize; i++) {
@@ -152,7 +158,7 @@ void taskShell() {
         else if (command == "reboot") {
             asm volatile ("jmp 0");
         }
-        else if (command.startsWith("task ")) {
+        else if (command.startsWith("task")) {
             int task = command.substring(4).toInt();
             if (task >= 1 && task <= 2) {
                 currentTask = task;
@@ -196,6 +202,7 @@ void taskShell() {
               Serial.println(EEPROM.read(i));
               EEPROM.update(i, 0);
             }
+            Serial.println("Done.");
           }else if(action == "format"){
             Serial.println("!WARNING: this does NOT clean the disk. You should run with clean first, then this to make it properly work.");
             formatFAT8();
@@ -205,14 +212,27 @@ void taskShell() {
             Serial.println("Done.");
           }else if(action.startsWith("write ")){
             action = action.substring(6);
-            writeFile(findFreeCluster(), action);
+            writeFile(currentCluster, action);
             Serial.println("Done writing.");
           }else if(action.startsWith("read ")){
             Serial.println(readFile(action.substring(5).toInt(), 8));
             Serial.println("Done reading.");
-          }else{
+          }else if(action.startsWith("sel ")){
+            currentCluster = action.substring(4).toInt();
+            Serial.println("Selected cluster.");
+          }else if(action.startsWith("sign ")){
+            EEPROM.update(currentCluster, action.substring(5).toInt());
+            Serial.println("Signed current cluster.");
+            currentCluster = -1;
+          }
+          else{
             Serial.println("Use \"clean\" to set all bytes of EEPROM disk to 0. Use \"print\" to print the whole file system. Use \"format\" to format the EEPROM to FAT8. Use \"write\" to write a file. Use \"read\" with a number to read a file with the number.");
           }
+        }else if(command.startsWith("echo ")){
+          Serial.println(command.substring(5));
+        }else if(command == "free"){
+          Serial.print(freeMemory());
+          Serial.println(" Bytes of ram free.");
         }
         else {
             Serial.println("Unknown command");
